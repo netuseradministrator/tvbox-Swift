@@ -346,12 +346,10 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
         let containerIdentifier = ObjectIdentifier(container)
         let containerSize = container.bounds.size
         let containerChanged = lastDrawableContainerIdentifier != containerIdentifier
-        let sizeChanged = hasSignificantContainerSizeChange(to: containerSize)
-        let canRebindForSizeChange = canRebindDrawableForSizeChange()
         lastAttachedContainer = container
         lastDrawableContainerIdentifier = containerIdentifier
         lastDrawableContainerSize = containerSize
-        let shouldRebind = containerChanged || (sizeChanged && canRebindForSizeChange) || persistentDrawableView.superview !== container || mediaPlayer.drawable == nil
+        let shouldRebind = containerChanged || persistentDrawableView.superview !== container || mediaPlayer.drawable == nil
 
         if persistentDrawableView.superview !== container {
             persistentDrawableView.removeFromSuperview()

@@ -52,9 +52,11 @@ final class SystemPlayerSessionController: ObservableObject {
     fileprivate var mediaURLString: String?
     
     func setPlayer(_ newPlayer: AVPlayer, urlString: String) {
-        if player !== newPlayer {
-            player?.pause()
-            player?.replaceCurrentItem(with: nil)
+        if player !== newPlayer, let previousPlayer = player {
+            previousPlayer.pause()
+            DispatchQueue.global(qos: .utility).async {
+                previousPlayer.replaceCurrentItem(with: nil)
+            }
         }
         player = newPlayer
         mediaURLString = urlString
@@ -97,7 +99,7 @@ struct PlayerView: View {
         } else if defaults.object(forKey: HawkConfig.PLAY_TYPE) != nil {
             rawValue = legacyPlayTypeRaw
         } else {
-            rawValue = PlayerEngine.system.rawValue
+            rawValue = PlayerEngine.defaultEngine.rawValue
         }
         return PlayerEngine.fromStoredValue(rawValue)
     }
@@ -318,22 +320,6 @@ struct AVPlayerContentView: View {
            sharedController.mediaURLString == targetURLString,
            let sharedPlayer = sharedController.player {
             cleanupPlayer(keepSharedPlayer: true)
-            // 强制重新关联 AVPlayerItem，修复从全屏退出后 VideoPlayer 黑屏问题。
-            // SwiftUI.VideoPlayer 在复用已有 AVPlayer 时可能无法正确连接视频渲染层，
-            // 通过 replaceCurrentItem 触发内部 layer 重新绑定。
-            #if os(iOS)
-            if let currentItem = sharedPlayer.currentItem {
-                let currentTime = sharedPlayer.currentTime()
-                let wasPlaying = sharedPlayer.rate != 0
-                sharedPlayer.replaceCurrentItem(with: nil)
-                sharedPlayer.replaceCurrentItem(with: currentItem)
-                sharedPlayer.seek(to: currentTime, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
-                    if wasPlaying {
-                        sharedPlayer.playImmediately(atRate: self.normalizedSavedPlaybackRate)
-                    }
-                }
-            }
-            #endif
             player = sharedPlayer
             applyPreferredPlaybackRate(to: sharedPlayer)
             bindPlayerObservers(for: sharedPlayer)

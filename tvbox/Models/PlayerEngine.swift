@@ -8,6 +8,8 @@ enum PlayerEngine: Int, CaseIterable, Identifiable {
     case vlc = 10
     
     var id: Int { rawValue }
+
+    static var defaultEngine: PlayerEngine { .system }
     
     /// UI 展示名。
     var title: String {

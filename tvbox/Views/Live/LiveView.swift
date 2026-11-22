@@ -57,9 +57,7 @@ struct LiveView: View {
         } else if defaults.object(forKey: HawkConfig.PLAY_TYPE) != nil {
             rawValue = legacyPlayTypeRaw
         } else {
-            rawValue = PlayerEngine.isVLCAvailable
-                ? PlayerEngine.vlc.rawValue
-                : PlayerEngine.system.rawValue
+            rawValue = PlayerEngine.defaultEngine.rawValue
         }
         return PlayerEngine.fromStoredValue(rawValue)
     }

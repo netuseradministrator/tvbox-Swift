@@ -179,3 +179,13 @@ struct ImageLoadLimiterTests {
         #expect(maximum > 0)
     }
 }
+
+
+@Suite("Player engine defaults")
+struct PlayerEngineDefaultsTests {
+    @Test("System player is the safe default and invalid values fall back to it")
+    func systemPlayerIsDefault() {
+        #expect(PlayerEngine.defaultEngine == .system)
+        #expect(PlayerEngine.fromStoredValue(-1) == .system)
+    }
+}
