@@ -111,3 +111,71 @@ struct SourceContentCacheTests {
         #expect(!SourceBean(key: "js", api: "./js/demo.js", type: 3).isSupportedInSwift)
     }
 }
+
+
+@Suite("Progressive image loading")
+struct ImageLoadWindowTests {
+    @Test("Only the first eight images are enabled initially")
+    func initialWindow() {
+        let window = ImageLoadWindow()
+        #expect(window.allowsImage(at: 0))
+        #expect(window.allowsImage(at: 7))
+        #expect(!window.allowsImage(at: 8))
+        #expect(!window.allowsImage(at: 100))
+    }
+
+    @Test("Appearing items reveal only the next small batch")
+    func revealNextBatch() {
+        var window = ImageLoadWindow()
+        window.reveal(index: 8)
+        #expect(window.allowsImage(at: 8))
+        #expect(window.allowsImage(at: 11))
+        #expect(!window.allowsImage(at: 12))
+    }
+
+    @Test("Changing a channel resets the image window")
+    func resetWindow() {
+        var window = ImageLoadWindow()
+        window.reveal(index: 40)
+        #expect(window.allowsImage(at: 40))
+        window.reset()
+        #expect(!window.allowsImage(at: 40))
+        #expect(window.allowsImage(at: 0))
+    }
+}
+
+private actor ImageConcurrencyProbe {
+    private var active = 0
+    private(set) var maximum = 0
+
+    func enter() {
+        active += 1
+        maximum = max(maximum, active)
+    }
+
+    func leave() {
+        active -= 1
+    }
+}
+
+@Suite("Image load concurrency")
+struct ImageLoadLimiterTests {
+    @Test("At most four image loads run concurrently")
+    func concurrencyLimit() async {
+        let probe = ImageConcurrencyProbe()
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<20 {
+                group.addTask {
+                    await ImageLoadLimiter.shared.acquire()
+                    await probe.enter()
+                    try? await Task.sleep(nanoseconds: 5_000_000)
+                    await probe.leave()
+                    await ImageLoadLimiter.shared.release()
+                }
+            }
+        }
+        let maximum = await probe.maximum
+        #expect(maximum <= 4)
+        #expect(maximum > 0)
+    }
+}

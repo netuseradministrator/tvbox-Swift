@@ -17,6 +17,13 @@ struct VodCardPressStyle: ButtonStyle {
 struct VodCardView: View {
     /// 卡片对应的视频数据。
     let video: Movie.Video
+    let allowsImageLoading: Bool
+
+    init(video: Movie.Video, allowsImageLoading: Bool = true) {
+        self.video = video
+        self.allowsImageLoading = allowsImageLoading
+    }
+
     /// 悬停状态（主要用于 macOS 悬停放大动效）。
     @State private var isHovered = false
     
@@ -24,7 +31,10 @@ struct VodCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             // 封面图
             ZStack(alignment: .bottomLeading) {
-                CachedAsyncImage(url: URL.posterURL(from: video.pic)) { image in
+                CachedAsyncImage(
+                    url: URL.posterURL(from: video.pic),
+                    allowsLoading: allowsImageLoading
+                ) { image in
                     image
                         .resizable()
                         .aspectRatio(2/3, contentMode: .fill)

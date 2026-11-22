@@ -627,9 +627,12 @@ struct LiveView: View {
         }
         itemStatusObserver = nil
         
-        avPlayer?.pause()
-        avPlayer?.replaceCurrentItem(with: nil)
+        let player = avPlayer
         avPlayer = nil
+        player?.pause()
+        DispatchQueue.global(qos: .utility).async {
+            player?.replaceCurrentItem(with: nil)
+        }
     }
     
     private func observePlaybackFailure(for item: AVPlayerItem) {

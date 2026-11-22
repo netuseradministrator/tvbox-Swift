@@ -4,6 +4,7 @@ import SwiftUI
 struct SearchView: View {
     /// 搜索状态与结果管理。
     @StateObject private var viewModel = SearchViewModel()
+    @State private var imageLoadWindow = ImageLoadWindow()
     
     #if os(iOS)
     /// iOS 卡片网格参数。
@@ -49,6 +50,9 @@ struct SearchView: View {
             }
             .background(Color(red: 0.08, green: 0.08, blue: 0.1))
             .navigationTitle("搜索")
+            .onChange(of: viewModel.results.map(\.id)) { _, _ in
+                imageLoadWindow.reset()
+            }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -123,15 +127,21 @@ struct SearchView: View {
     private var searchResults: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(viewModel.results) { video in
+                ForEach(Array(viewModel.results.enumerated()), id: \.offset) { index, video in
                     NavigationLink(value: video) {
-                        VodCardView(video: video)
+                        VodCardView(
+                            video: video,
+                            allowsImageLoading: imageLoadWindow.allowsImage(at: index)
+                        )
                     }
                     #if os(iOS)
                     .buttonStyle(VodCardPressStyle())
                     #else
                     .buttonStyle(.plain)
                     #endif
+                    .onAppear {
+                        imageLoadWindow.reveal(index: index)
+                    }
                 }
             }
             .padding(.horizontal, 20)

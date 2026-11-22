@@ -691,17 +691,19 @@ class ApiConfig: ObservableObject {
             
             for (_, content) in fetchedContents.sorted(by: { $0.0 < $1.0 }) {
                 guard activeLoadToken == loadToken else { return [] }
-                let groups = parseLiveContent(content)
+                let groups = await Task.detached(priority: .utility) {
+                    Self.parseLiveContent(content)
+                }.value
                 mergeLiveGroups(groups, into: &mergedGroups)
-                liveChannelGroupList = sortedGroups(from: mergedGroups)
+                liveChannelGroupList = Self.sortedGroups(from: mergedGroups)
             }
         }
         
-        return sortedGroups(from: mergedGroups)
+        return Self.sortedGroups(from: mergedGroups)
     }
     
     /// 解析 m3u / txt 格式的直播内容
-    private func parseLiveContent(_ content: String) -> [LiveChannelGroup] {
+    private nonisolated static func parseLiveContent(_ content: String) -> [LiveChannelGroup] {
         var groups: [String: LiveChannelGroup] = [:]
         var currentGroupName = "默认"
         
@@ -730,7 +732,7 @@ class ApiConfig: ObservableObject {
                     }
                 } else if Self.isLiveStreamUrl(trimmed) {
                     if !currentName.isEmpty {
-                        appendChannel(
+                        Self.appendChannel(
                             named: currentName,
                             urls: [trimmed],
                             logo: "",
@@ -761,7 +763,7 @@ class ApiConfig: ObservableObject {
                     let url = parts[1...].joined(separator: ",").trimmingCharacters(in: .whitespaces)
                     
                     if !name.isEmpty && Self.isLiveStreamUrl(url) {
-                        appendChannel(
+                        Self.appendChannel(
                             named: name,
                             urls: [url],
                             logo: "",
@@ -773,13 +775,13 @@ class ApiConfig: ObservableObject {
             }
         }
         
-        return sortedGroups(from: groups)
+        return Self.sortedGroups(from: groups)
     }
     
     private func parseInlineLiveChannels(_ channels: [AppConfigData.LiveConfig.LiveChannelConfig]) -> [LiveChannelGroup] {
         var groups: [String: LiveChannelGroup] = [:]
         for channel in channels {
-            appendChannel(
+            Self.appendChannel(
                 named: channel.name ?? "",
                 urls: channel.urls ?? [],
                 logo: channel.logo ?? "",
@@ -787,13 +789,13 @@ class ApiConfig: ObservableObject {
                 groups: &groups
             )
         }
-        return sortedGroups(from: groups)
+        return Self.sortedGroups(from: groups)
     }
     
     private func mergeLiveGroups(_ incomingGroups: [LiveChannelGroup], into groups: inout [String: LiveChannelGroup]) {
         for group in incomingGroups {
             for channel in group.channels {
-                appendChannel(
+                Self.appendChannel(
                     named: channel.channelName,
                     urls: channel.channelUrls,
                     logo: channel.logo,
@@ -804,7 +806,7 @@ class ApiConfig: ObservableObject {
         }
     }
     
-    private func appendChannel(
+    private nonisolated static func appendChannel(
         named channelName: String,
         urls: [String],
         logo: String,
@@ -854,7 +856,7 @@ class ApiConfig: ObservableObject {
         groups[normalizedGroupName] = group
     }
     
-    private func sortedGroups(from groups: [String: LiveChannelGroup]) -> [LiveChannelGroup] {
+    private nonisolated static func sortedGroups(from groups: [String: LiveChannelGroup]) -> [LiveChannelGroup] {
         groups.values
             .sorted { $0.groupIndex < $1.groupIndex }
             .map { group in
@@ -881,7 +883,7 @@ class ApiConfig: ObservableObject {
         return Self.normalizeConfigUrl(resolved.absoluteString)
     }
     
-    private static func uniqueLiveUrls(_ urls: [String]) -> [String] {
+    private nonisolated static func uniqueLiveUrls(_ urls: [String]) -> [String] {
         var result: [String] = []
         var seen: Set<String> = []
         
@@ -895,20 +897,20 @@ class ApiConfig: ObservableObject {
         return result
     }
     
-    private static func normalizeGroupName(_ groupName: String) -> String {
+    private nonisolated static func normalizeGroupName(_ groupName: String) -> String {
         let trimmed = groupName.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "默认" : trimmed
     }
     
-    private static func normalizeChannelName(_ channelName: String) -> String {
+    private nonisolated static func normalizeChannelName(_ channelName: String) -> String {
         channelName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    private static func normalizeLiveUrl(_ url: String) -> String {
+    private nonisolated static func normalizeLiveUrl(_ url: String) -> String {
         url.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    private static func isLiveStreamUrl(_ url: String) -> Bool {
+    private nonisolated static func isLiveStreamUrl(_ url: String) -> Bool {
         let lowercased = url.lowercased()
         return lowercased.hasPrefix("http://")
             || lowercased.hasPrefix("https://")

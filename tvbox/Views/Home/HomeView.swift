@@ -6,6 +6,7 @@ struct HomeView: View {
     @StateObject private var apiConfig = ApiConfig.shared
     @EnvironmentObject var appState: AppState
     @State private var categoryScrollAnchorId: String?
+    @State private var imageLoadWindow = ImageLoadWindow()
     
     // 网格布局
     #if os(iOS)
@@ -39,6 +40,7 @@ struct HomeView: View {
         }
         .onChange(of: apiConfig.homeSourceBean?.cacheIdentifier) { _, _ in
             guard let source = apiConfig.homeSourceBean else { return }
+            imageLoadWindow.reset()
             viewModel.switchSource(source)
         }
     }
@@ -135,6 +137,7 @@ struct HomeView: View {
                 scrollCategoryBar(to: categoryScrollAnchorId, proxy: proxy, animated: false)
             }
             .onChange(of: viewModel.selectedSort?.id) { oldId, newId in
+                imageLoadWindow.reset()
                 guard let newId else { return }
                 categoryScrollAnchorId = newId
                 scrollCategoryBar(to: newId, proxy: proxy)
@@ -223,9 +226,12 @@ struct HomeView: View {
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(displayedVideos) { video in
+                        ForEach(Array(displayedVideos.enumerated()), id: \.offset) { index, video in
                             NavigationLink(value: video) {
-                                VodCardView(video: video)
+                                VodCardView(
+                                    video: video,
+                                    allowsImageLoading: imageLoadWindow.allowsImage(at: index)
+                                )
                             }
                             #if os(iOS)
                             .buttonStyle(VodCardPressStyle())
@@ -233,6 +239,7 @@ struct HomeView: View {
                             .buttonStyle(.plain)
                             #endif
                             .onAppear {
+                                imageLoadWindow.reveal(index: index)
                                 Task { await viewModel.loadMoreIfNeeded(currentItem: video) }
                             }
                         }

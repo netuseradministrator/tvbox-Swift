@@ -209,11 +209,37 @@ extension URL {
 
 // MARK: - Cached Async Image
 
+struct ImageLoadWindow {
+    private let initialCount: Int
+    private let prefetchCount: Int
+    private var allowedIndices: Set<Int> = []
+
+    init(initialCount: Int = 8, prefetchCount: Int = 4) {
+        self.initialCount = max(0, initialCount)
+        self.prefetchCount = max(0, prefetchCount)
+        reset()
+    }
+
+    mutating func reset() {
+        allowedIndices = Set(0..<initialCount)
+    }
+
+    mutating func reveal(index: Int) {
+        guard index >= 0 else { return }
+        allowedIndices.formUnion(index..<(index + prefetchCount))
+    }
+
+    func allowsImage(at index: Int) -> Bool {
+        allowedIndices.contains(index)
+    }
+}
+
 /// 自定义异步图片加载组件
 /// AsyncImage 不支持自定义 header，许多图片服务器需要 Referer/User-Agent 才能正常返回图片
 /// 此组件通过自定义 URLSession 发起请求，解决海报永远加载不出来的问题
 struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     let url: URL?
+    let allowsLoading: Bool
     @ViewBuilder let content: (Image) -> Content
     @ViewBuilder let placeholder: () -> Placeholder
     
@@ -224,10 +250,12 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     
     init(
         url: URL?,
+        allowsLoading: Bool = true,
         @ViewBuilder content: @escaping (Image) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.url = url
+        self.allowsLoading = allowsLoading
         self.content = content
         self.placeholder = placeholder
     }
@@ -244,7 +272,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
                 placeholder()
             }
         }
-        .task(id: url) {
+        .task(id: allowsLoading ? url : nil) {
             await loadImage()
         }
         .onDisappear {
@@ -254,7 +282,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     }
     
     private func loadImage() async {
-        guard let url = url else {
+        guard allowsLoading, let url = url else {
             loadedImage = nil
             return
         }
@@ -294,6 +322,32 @@ typealias PlatformImage = UIImage
 
 // MARK: - Image Loader
 
+actor ImageLoadLimiter {
+    static let shared = ImageLoadLimiter()
+
+    private let limit = 4
+    private var activeCount = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        if activeCount < limit {
+            activeCount += 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            activeCount = max(0, activeCount - 1)
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
+}
+
 /// 使用自定义 URLSession 加载图片，支持自定义请求头
 final class ImageLoader {
     static let shared = ImageLoader()
@@ -324,6 +378,7 @@ final class ImageLoader {
     func load(url: URL) async throws -> PlatformImage {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        request.cachePolicy = .returnCacheDataElseLoad
         request.setValue(
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             forHTTPHeaderField: "User-Agent"
@@ -332,6 +387,11 @@ final class ImageLoader {
             request.setValue("https://\(host)/", forHTTPHeaderField: "Referer")
         }
         
+        await ImageLoadLimiter.shared.acquire()
+        defer {
+            Task { await ImageLoadLimiter.shared.release() }
+        }
+
         var lastError: Error = ImageLoadError.invalidData
         let totalAttempts = Self.maxImageRetries + 1
         
@@ -424,8 +484,8 @@ final class ImageCache {
     private let cache = NSCache<NSURL, PlatformImage>()
     
     private init() {
-        cache.countLimit = 120
-        cache.totalCostLimit = 40 * 1024 * 1024
+        cache.countLimit = 80
+        cache.totalCostLimit = 24 * 1024 * 1024
     }
     
     func get(for url: URL) -> PlatformImage? {
