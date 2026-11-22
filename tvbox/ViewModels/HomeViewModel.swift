@@ -80,9 +80,10 @@ final class HomeViewModel: ObservableObject {
         isSourceLoading = sorts.isEmpty
         isSourceRefreshing = !sorts.isEmpty
         defer {
-            guard sourceRequestID == requestID, currentSource?.cacheIdentifier == source.cacheIdentifier else { return }
-            isSourceLoading = false
-            isSourceRefreshing = false
+            if sourceRequestID == requestID, currentSource?.cacheIdentifier == source.cacheIdentifier {
+                isSourceLoading = false
+                isSourceRefreshing = false
+            }
         }
 
         if !forceRefresh,
@@ -173,10 +174,11 @@ final class HomeViewModel: ObservableObject {
             isLoadingMore = true
         }
         defer {
-            guard isCurrentCategory(sort, source: source, requestID: requestID) else { return }
-            isCategoryLoading = false
-            isCategoryRefreshing = false
-            isLoadingMore = false
+            if isCurrentCategory(sort, source: source, requestID: requestID) {
+                isCategoryLoading = false
+                isCategoryRefreshing = false
+                isLoadingMore = false
+            }
         }
 
         if page == 1, !forceRefresh,
