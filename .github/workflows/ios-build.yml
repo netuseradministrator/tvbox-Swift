@@ -24,23 +24,26 @@ jobs:
 
       - name: Build iOS app
         run: |
+          set -o pipefail
+          mkdir -p build
           xcodebuild build \
             -project tvbox.xcodeproj \
             -scheme tvbox \
             -configuration Release \
             -destination generic/platform=iOS \
             -derivedDataPath build/DerivedData \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/build.log
 
       - name: Run iOS tests
         run: |
+          set -o pipefail
           xcodebuild test \
             -project tvbox.xcodeproj \
             -scheme tvbox \
             -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
             -derivedDataPath build/TestDerivedData \
             -only-testing:tvbox-Tests \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/test.log
 
       - name: Package unsigned IPA
         run: |
@@ -55,4 +58,13 @@ jobs:
           name: TVBox-iOS-unsigned
           path: build/TVBox-unsigned.ipa
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS-build-logs
+          path: build/*.log
+          if-no-files-found: ignore
           retention-days: 7
