@@ -106,6 +106,7 @@ struct ContentView: View {
                 .tag(3)
         }
         .tint(.orange)
+        .toolbar(selectedTab == 1 ? .hidden : .visible, for: .tabBar)
         .onChange(of: selectedTab) { _, _ in
             HapticManager.shared.selection()
         }

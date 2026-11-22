@@ -12,6 +12,7 @@ struct LiveView: View {
     @StateObject private var viewModel = LiveViewModel()
     /// 全局应用状态（用于 macOS 全屏时调整分栏布局）。
     @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     /// 系统播放器实例（仅在选择系统内核时使用）。
     @State private var avPlayer: AVPlayer?
     /// 直播播放器内核配置（新字段）。
@@ -103,7 +104,6 @@ struct LiveView: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarHidden(true)
             .toolbar(.hidden, for: .navigationBar)
-            .toolbar(.hidden, for: .tabBar)
             #endif
             .onAppear {
                 // 首次进入时加载频道并展示频道信息卡。
@@ -209,6 +209,7 @@ struct LiveView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
+            .zIndex(2)
             
             #if os(macOS)
             if showChannelDrawer {
@@ -307,20 +308,28 @@ struct LiveView: View {
     private var liveBackButton: some View {
         Button {
             HapticManager.shared.lightImpact()
+            showChannelOverlay = false
+            cleanupPlayer()
             onExit?()
+            dismiss()
         } label: {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white.opacity(0.9))
-                .frame(width: 38, height: 38)
-                .background(Color.black.opacity(0.35))
-                .clipShape(Circle())
-                .overlay(
-                    Circle()
-                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                )
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.left")
+                Text("首页")
+            }
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundColor(.white.opacity(0.95))
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(Color.black.opacity(0.65))
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+            )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("退出直播并返回首页")
     }
     #endif
     
