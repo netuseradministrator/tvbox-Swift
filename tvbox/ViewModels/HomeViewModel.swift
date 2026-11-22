@@ -2,65 +2,288 @@ import Foundation
 import SwiftUI
 import Combine
 
-/// 首页 ViewModel
 @MainActor
-class HomeViewModel: ObservableObject {
-    /// 分类列表（包含手动注入的"推荐"分类）。
+final class HomeViewModel: ObservableObject {
     @Published var sorts: [MovieSort.SortData] = []
-    /// 当前选中的分类。
     @Published var selectedSort: MovieSort.SortData?
-    /// 首页推荐内容（对应"推荐"分类）。
     @Published var homeVideos: [Movie.Video] = []
-    /// 普通分类的视频列表（分页加载）。
     @Published var categoryVideos: [Movie.Video] = []
-    /// 页面加载状态（分类加载与分页共用）。
-    @Published var isLoading = false
-    /// 当前分类的分页页码。
     @Published var currentPage = 1
-    /// 是否还有下一页。
     @Published var hasMore = true
-    /// 错误提示文案。
     @Published var errorMessage: String?
-    
-    /// 源数据访问服务。
+
+    @Published private(set) var currentSource: SourceBean?
+    @Published private var isSourceLoading = false
+    @Published private var isCategoryLoading = false
+    @Published private var isSourceRefreshing = false
+    @Published private var isCategoryRefreshing = false
+    @Published private(set) var isLoadingMore = false
+
+    var isLoading: Bool { isSourceLoading || isCategoryLoading }
+    var isRefreshing: Bool { isSourceRefreshing || isCategoryRefreshing }
+
     private let sourceService = SourceService.shared
-    /// 标记上次加载是否因网络错误失败（用于网络恢复自动重试）。
+    private var sourceTask: Task<Void, Never>?
+    private var categoryTask: Task<Void, Never>?
+    private var sourceRequestID = UUID()
+    private var categoryRequestID = UUID()
     private var lastLoadFailedDueToNetwork = false
     private var networkRestoredCancellable: AnyCancellable?
-    
+
     init() {
         setupNetworkRestoredAutoRetry()
     }
-    
-    /// 加载分类列表
+
     func loadSorts() async {
         guard let source = ApiConfig.shared.homeSourceBean else { return }
-        isLoading = true
-        errorMessage = nil
-        
-        do {
-            let result = try await sourceService.getSort(sourceBean: source)
-            
-            // 插入本地"推荐"分类，保持 UI 与 Android 版本习惯一致。
-            var allSorts = [MovieSort.SortData.home()]
-            allSorts.append(contentsOf: result.sorts)
-            
-            self.sorts = allSorts
-            self.homeVideos = result.homeVideos
-            lastLoadFailedDueToNetwork = false
-            
-            if selectedSort == nil {
-                selectedSort = allSorts.first
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-            lastLoadFailedDueToNetwork = error.isNetworkConnectionError
-        }
-        
-        isLoading = false
+        switchSource(source)
+        await sourceTask?.value
     }
-    
-    /// 网络恢复时，若上次因网络错误导致首页为空，自动重新加载。
+
+    func switchSource(_ source: SourceBean) {
+        if currentSource?.cacheIdentifier == source.cacheIdentifier,
+           !sorts.isEmpty || isSourceLoading {
+            return
+        }
+
+        sourceTask?.cancel()
+        categoryTask?.cancel()
+        sourceRequestID = UUID()
+        categoryRequestID = UUID()
+        currentSource = source
+
+        sorts = []
+        selectedSort = nil
+        homeVideos = []
+        categoryVideos = []
+        currentPage = 1
+        hasMore = true
+        errorMessage = nil
+        isSourceLoading = true
+        isCategoryLoading = false
+        isLoadingMore = false
+        isSourceRefreshing = false
+        isCategoryRefreshing = false
+
+        let requestID = sourceRequestID
+        sourceTask = Task { [weak self] in
+            guard let self else { return }
+            await self.loadSource(source, requestID: requestID, forceRefresh: false)
+        }
+    }
+
+    private func loadSource(
+        _ source: SourceBean,
+        requestID: UUID,
+        forceRefresh: Bool
+    ) async {
+        isSourceLoading = sorts.isEmpty
+        isSourceRefreshing = !sorts.isEmpty
+        defer {
+            guard sourceRequestID == requestID, currentSource?.cacheIdentifier == source.cacheIdentifier else { return }
+            isSourceLoading = false
+            isSourceRefreshing = false
+        }
+
+        if !forceRefresh,
+           let cached = await sourceService.cachedSort(sourceBean: source) {
+            guard isCurrentSource(source, requestID: requestID) else { return }
+            applyHomeContent(cached.value)
+            isSourceLoading = false
+            isSourceRefreshing = true
+            lastLoadFailedDueToNetwork = false
+            if cached.isFresh { return }
+        }
+
+        do {
+            let result = try await sourceService.getSort(
+                sourceBean: source,
+                forceRefresh: forceRefresh
+            )
+            guard isCurrentSource(source, requestID: requestID) else { return }
+            applyHomeContent(SourceHomeContent(sorts: result.sorts, homeVideos: result.homeVideos))
+            lastLoadFailedDueToNetwork = false
+        } catch is CancellationError {
+            return
+        } catch {
+            guard isCurrentSource(source, requestID: requestID) else { return }
+            lastLoadFailedDueToNetwork = error.isNetworkConnectionError
+            if sorts.isEmpty && homeVideos.isEmpty {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func applyHomeContent(_ content: SourceHomeContent) {
+        let previousSortID = selectedSort?.id
+        var allSorts = [MovieSort.SortData.home()]
+        allSorts.append(contentsOf: content.sorts)
+        sorts = allSorts
+        homeVideos = content.homeVideos
+        if let previousSortID,
+           let matched = allSorts.first(where: { $0.id == previousSortID }) {
+            selectedSort = matched
+        } else {
+            selectedSort = allSorts.first
+        }
+    }
+
+    func selectSort(_ sort: MovieSort.SortData) {
+        guard selectedSort?.id != sort.id,
+              let source = currentSource,
+              sorts.contains(where: { $0.id == sort.id }) else { return }
+
+        categoryTask?.cancel()
+        categoryRequestID = UUID()
+        selectedSort = sort
+        errorMessage = nil
+        categoryVideos = []
+        currentPage = 1
+        hasMore = sort.id != "home"
+        isCategoryLoading = sort.id != "home"
+        isCategoryRefreshing = false
+        isLoadingMore = false
+
+        guard sort.id != "home" else { return }
+        let requestID = categoryRequestID
+        categoryTask = Task { [weak self] in
+            guard let self else { return }
+            await self.loadCategory(
+                page: 1,
+                sort: sort,
+                source: source,
+                requestID: requestID,
+                forceRefresh: false
+            )
+        }
+    }
+
+    private func loadCategory(
+        page: Int,
+        sort: MovieSort.SortData,
+        source: SourceBean,
+        requestID: UUID,
+        forceRefresh: Bool
+    ) async {
+        guard sort.id != "home" else { return }
+        if page == 1 {
+            isCategoryLoading = categoryVideos.isEmpty
+            isCategoryRefreshing = !categoryVideos.isEmpty
+        } else {
+            isLoadingMore = true
+        }
+        defer {
+            guard isCurrentCategory(sort, source: source, requestID: requestID) else { return }
+            isCategoryLoading = false
+            isCategoryRefreshing = false
+            isLoadingMore = false
+        }
+
+        if page == 1, !forceRefresh,
+           let cached = await sourceService.cachedList(
+            sourceBean: source,
+            sortData: sort,
+            page: page
+           ) {
+            guard isCurrentCategory(sort, source: source, requestID: requestID) else { return }
+            categoryVideos = cached.value
+            currentPage = page
+            hasMore = !cached.value.isEmpty
+            isCategoryLoading = false
+            isCategoryRefreshing = true
+            lastLoadFailedDueToNetwork = false
+            if cached.isFresh { return }
+        }
+
+        do {
+            let videos = try await sourceService.getList(
+                sourceBean: source,
+                sortData: sort,
+                page: page,
+                forceRefresh: forceRefresh
+            )
+            guard isCurrentCategory(sort, source: source, requestID: requestID) else { return }
+
+            if page == 1 {
+                categoryVideos = videos
+            } else {
+                let existingIDs = Set(categoryVideos.map(\.id))
+                categoryVideos.append(contentsOf: videos.filter { !existingIDs.contains($0.id) })
+            }
+            currentPage = page
+            hasMore = !videos.isEmpty
+            errorMessage = nil
+            lastLoadFailedDueToNetwork = false
+        } catch is CancellationError {
+            return
+        } catch {
+            guard isCurrentCategory(sort, source: source, requestID: requestID) else { return }
+            lastLoadFailedDueToNetwork = error.isNetworkConnectionError
+            if categoryVideos.isEmpty {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func loadMore() async {
+        guard let lastItem = categoryVideos.last else { return }
+        await loadMoreIfNeeded(currentItem: lastItem)
+    }
+
+    func loadMoreIfNeeded(currentItem: Movie.Video) async {
+        guard selectedSort?.id != "home",
+              hasMore,
+              !isCategoryLoading,
+              !isLoadingMore,
+              categoryVideos.last?.id == currentItem.id,
+              let sort = selectedSort,
+              let source = currentSource else { return }
+
+        await loadCategory(
+            page: currentPage + 1,
+            sort: sort,
+            source: source,
+            requestID: categoryRequestID,
+            forceRefresh: false
+        )
+    }
+
+    func refresh() async {
+        guard let source = currentSource ?? ApiConfig.shared.homeSourceBean else { return }
+        sourceTask?.cancel()
+        categoryTask?.cancel()
+        sourceRequestID = UUID()
+        categoryRequestID = UUID()
+        currentSource = source
+        errorMessage = nil
+
+        await loadSource(source, requestID: sourceRequestID, forceRefresh: true)
+        guard currentSource?.cacheIdentifier == source.cacheIdentifier,
+              let sort = selectedSort,
+              sort.id != "home" else { return }
+        await loadCategory(
+            page: 1,
+            sort: sort,
+            source: source,
+            requestID: categoryRequestID,
+            forceRefresh: true
+        )
+    }
+
+    private func isCurrentSource(_ source: SourceBean, requestID: UUID) -> Bool {
+        sourceRequestID == requestID && currentSource?.cacheIdentifier == source.cacheIdentifier
+    }
+
+    private func isCurrentCategory(
+        _ sort: MovieSort.SortData,
+        source: SourceBean,
+        requestID: UUID
+    ) -> Bool {
+        categoryRequestID == requestID
+            && selectedSort?.id == sort.id
+            && currentSource?.cacheIdentifier == source.cacheIdentifier
+    }
+
     private func setupNetworkRestoredAutoRetry() {
         networkRestoredCancellable = NetworkMonitor.shared.networkRestoredPublisher
             .sink { [weak self] in
@@ -71,91 +294,5 @@ class HomeViewModel: ObservableObject {
                     await self.refresh()
                 }
             }
-    }
-    
-    /// 选择分类
-    func selectSort(_ sort: MovieSort.SortData) {
-        // 切分类时先重置分页状态，避免旧分类残留数据闪烁。
-        selectedSort = sort
-        errorMessage = nil
-        categoryVideos = []
-        currentPage = 1
-        hasMore = true
-        
-        if sort.id == "home" {
-            return
-        } else {
-            Task {
-                await loadCategoryVideos(page: 1, sort: sort)
-            }
-        }
-    }
-    
-    /// 加载分类视频列表
-    private func loadCategoryVideos(page: Int, sort: MovieSort.SortData) async {
-        guard sort.id != "home" else { return }
-        guard let source = ApiConfig.shared.homeSourceBean else { return }
-        // 防重复并发加载，避免分页错序。
-        guard !isLoading else { return }
-        
-        isLoading = true
-        defer { isLoading = false }
-        
-        do {
-            let videos = try await sourceService.getList(sourceBean: source, sortData: sort, page: page)
-            
-            // 分类切换过程中，丢弃旧请求结果
-            guard selectedSort?.id == sort.id else { return }
-            
-            if page == 1 {
-                categoryVideos = videos
-            } else {
-                categoryVideos.append(contentsOf: videos)
-            }
-            // 以"返回非空"作为是否继续分页的轻量判断。
-            currentPage = page
-            hasMore = !videos.isEmpty
-        } catch {
-            guard selectedSort?.id == sort.id else { return }
-            errorMessage = error.localizedDescription
-        }
-    }
-    
-    /// 加载下一页
-    func loadMore() async {
-        guard let lastItem = categoryVideos.last else { return }
-        await loadMoreIfNeeded(currentItem: lastItem)
-    }
-    
-    /// 当最后一个元素出现时触发加载下一页
-    func loadMoreIfNeeded(currentItem: Movie.Video) async {
-        guard selectedSort?.id != "home" else { return }
-        guard hasMore, !isLoading else { return }
-        guard categoryVideos.last?.id == currentItem.id else { return }
-        guard let sort = selectedSort else { return }
-        
-        let nextPage = currentPage + 1
-        await loadCategoryVideos(page: nextPage, sort: sort)
-    }
-    
-    /// 刷新
-    func refresh() async {
-        // 全量刷新时重置分页与错误态，再重新拉分类与当前分类内容。
-        currentPage = 1
-        hasMore = true
-        categoryVideos = []
-        errorMessage = nil
-        await loadSorts()
-        
-        guard let sort = selectedSort else { return }
-        if sort.id == "home" { return }
-        
-        if let matchedSort = sorts.first(where: { $0.id == sort.id }) {
-            selectedSort = matchedSort
-            await loadCategoryVideos(page: 1, sort: matchedSort)
-        } else if let firstCategory = sorts.first(where: { $0.id != "home" }) {
-            selectedSort = firstCategory
-            await loadCategoryVideos(page: 1, sort: firstCategory)
-        }
     }
 }

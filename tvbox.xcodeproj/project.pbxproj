@@ -95,6 +95,10 @@
 		F911F241653C76EABDA844A9 /* SearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0217E00DE1B92A89B4D7C3 /* SearchViewModel.swift */; };
 		FA5621E49A1014D014A5906E /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10969CAA236B75C35062BCE /* SettingsView.swift */; };
 		FFA89F351987A1217DBC56B2 /* PlayerGestureLayerPropertyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 269FD665F80615609817E428 /* PlayerGestureLayerPropertyTests.swift */; };
+		A10000000000000000000002 /* SourceContentCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* SourceContentCache.swift */; };
+		A10000000000000000000003 /* SourceContentCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* SourceContentCache.swift */; };
+		A10000000000000000000005 /* SourceContentCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* SourceContentCacheTests.swift */; };
+		A10000000000000000000006 /* SourceContentCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* SourceContentCacheTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -164,6 +168,8 @@
 		E81C1B0D20EE3EFB6B58418B /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		EF32540F2107786AF4ECD571 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
 		F905D1244D5DE13DBCEE170F /* VodCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VodCardView.swift; sourceTree = "<group>"; };
+		A10000000000000000000001 /* SourceContentCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceContentCache.swift; sourceTree = "<group>"; };
+		A10000000000000000000004 /* SourceContentCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceContentCacheTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -211,6 +217,7 @@
 				D1006DD8209F63DC3AC3C718 /* NetworkManager.swift */,
 				7752B731B0A015EB4B85BFB1 /* NetworkMonitor.swift */,
 				D5DFDD8C597739AD4B443C03 /* SourceService.swift */,
+				A10000000000000000000001 /* SourceContentCache.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -240,6 +247,7 @@
 				7FAB47D447BF6A9FC1A80BE9 /* ChannelOverlayGroupWidthPropertyTests.swift */,
 				269FD665F80615609817E428 /* PlayerGestureLayerPropertyTests.swift */,
 				A5767F0D984BBEFBB9101110 /* PlayerGestureLayerZoomClampingTests.swift */,
+				A10000000000000000000004 /* SourceContentCacheTests.swift */,
 			);
 			path = tvboxTests;
 			sourceTree = "<group>";
@@ -561,6 +569,7 @@
 				D3B09E23F0DFA6298CCE6B40 /* PlayerGestureLayerTests.swift in Sources */,
 				C04126B16A89AF84E7EAC441 /* PlayerGestureLayerZoneClassificationTests.swift in Sources */,
 				CFF1FF7DF205B2E3CFBF9DD0 /* PlayerGestureLayerZoomClampingTests.swift in Sources */,
+				A10000000000000000000005 /* SourceContentCacheTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -571,6 +580,7 @@
 				9231BB5D5B5D6E7172B46775 /* ChannelOverlayGroupWidthPropertyTests.swift in Sources */,
 				FFA89F351987A1217DBC56B2 /* PlayerGestureLayerPropertyTests.swift in Sources */,
 				9995EE797BCD482A8D371F26 /* PlayerGestureLayerZoomClampingTests.swift in Sources */,
+				A10000000000000000000006 /* SourceContentCacheTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -612,6 +622,7 @@
 				80886C0A593DE429B8A62C4C /* SettingsViewModel.swift in Sources */,
 				17BAC049400FFF5487ECD23B /* SourceBean.swift in Sources */,
 				49FCE735A7CD8228369E3824 /* SourceService.swift in Sources */,
+				A10000000000000000000002 /* SourceContentCache.swift in Sources */,
 				85094ADB7683C758B5F5F835 /* VLCPlayerView.swift in Sources */,
 				205509C747774AFBAB4F9645 /* VodCardView.swift in Sources */,
 				BB36351815C53AC6EACB475A /* VodInfo.swift in Sources */,
@@ -657,6 +668,7 @@
 				4C4402D4594D06EA9D76960A /* SettingsViewModel.swift in Sources */,
 				C13E02E9A6451F57D21590A3 /* SourceBean.swift in Sources */,
 				2AAA54BEC34D9A528B2208ED /* SourceService.swift in Sources */,
+				A10000000000000000000003 /* SourceContentCache.swift in Sources */,
 				B271873FE89F02840EAC6975 /* VLCPlayerView.swift in Sources */,
 				217BB4F40B9348F439749C70 /* VodCardView.swift in Sources */,
 				74D54978A79B511FDE79524D /* VodInfo.swift in Sources */,

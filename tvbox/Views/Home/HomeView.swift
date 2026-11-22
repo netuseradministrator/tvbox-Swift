@@ -3,6 +3,7 @@ import SwiftUI
 /// 首页 - 对应 Android 版 HomeActivity + UserFragment
 struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
+    @StateObject private var apiConfig = ApiConfig.shared
     @EnvironmentObject var appState: AppState
     @State private var categoryScrollAnchorId: String?
     
@@ -35,9 +36,10 @@ struct HomeView: View {
         }
         .task {
             await viewModel.loadSorts()
-            if let first = viewModel.sorts.first {
-                viewModel.selectSort(first)
-            }
+        }
+        .onChange(of: apiConfig.homeSourceBean?.cacheIdentifier) { _, _ in
+            guard let source = apiConfig.homeSourceBean else { return }
+            viewModel.switchSource(source)
         }
     }
     
@@ -47,14 +49,14 @@ struct HomeView: View {
         HStack(spacing: 12) {
             // 源切换按钮
             Menu {
-                ForEach(ApiConfig.shared.sourceBeanList.filter { $0.isSupportedInSwift }) { source in
+                ForEach(apiConfig.sourceBeanList.filter { $0.isSupportedInSwift }) { source in
                     Button {
-                        ApiConfig.shared.setHomeSource(source)
-                        Task { await viewModel.refresh() }
+                        apiConfig.setHomeSource(source)
+                        appState.currentSourceKey = source.key
                     } label: {
                         HStack {
                             Text(source.name)
-                            if source.key == ApiConfig.shared.homeSourceBean?.key {
+                            if source.key == apiConfig.homeSourceBean?.key {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -65,7 +67,7 @@ struct HomeView: View {
                     Image(systemName: "play.tv.fill")
                         .font(.system(size: 14))
                         .foregroundColor(.orange)
-                    Text(ApiConfig.shared.homeSourceBean?.name ?? "TVBox")
+                    Text(apiConfig.homeSourceBean?.name ?? "TVBox")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.white)
                         .lineLimit(1)
@@ -76,6 +78,12 @@ struct HomeView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+
+            if viewModel.isRefreshing {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.orange)
+            }
             
             Spacer()
         }
@@ -135,11 +143,6 @@ struct HomeView: View {
         .padding(.bottom, 4)
     }
     
-    private func categoryIndex(for id: String?) -> Int? {
-        guard let id else { return nil }
-        return viewModel.sorts.firstIndex(where: { $0.id == id })
-    }
-    
     private func syncCategoryScrollAnchorIfNeeded() {
         guard !viewModel.sorts.isEmpty else {
             categoryScrollAnchorId = nil
@@ -173,22 +176,26 @@ struct HomeView: View {
     }
     
     // MARK: - 内容区
+
+    private var displayedVideos: [Movie.Video] {
+        viewModel.selectedSort?.id == "home" ? viewModel.homeVideos : viewModel.categoryVideos
+    }
     
     private var contentArea: some View {
         Group {
-            if viewModel.isLoading && viewModel.categoryVideos.isEmpty && viewModel.homeVideos.isEmpty {
+            if viewModel.isLoading && displayedVideos.isEmpty {
                 VStack {
                     Spacer()
                     ProgressView()
                         .scaleEffect(1.5)
                         .tint(.orange)
-                    Text("加载中...")
+                    Text("正在加载数据源...")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .padding(.top, 12)
                     Spacer()
                 }
-            } else if let error = viewModel.errorMessage, viewModel.categoryVideos.isEmpty && viewModel.homeVideos.isEmpty {
+            } else if let error = viewModel.errorMessage, displayedVideos.isEmpty {
                 VStack(spacing: 12) {
                     Spacer()
                     Image(systemName: "exclamationmark.triangle")
@@ -199,14 +206,6 @@ struct HomeView: View {
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
-                    
-                    // 如果是不支持的源类型，显示类型信息
-                    if let source = ApiConfig.shared.homeSourceBean, !source.isSupportedInSwift {
-                        Text("当前源类型: \(source.typeDescription)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
                     Button("重试") {
                         Task { await viewModel.refresh() }
                     }
@@ -214,14 +213,17 @@ struct HomeView: View {
                     .tint(.orange)
                     Spacer()
                 }
+            } else if displayedVideos.isEmpty {
+                VStack {
+                    Spacer()
+                    Text("暂无内容")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
             } else {
-                let videos = viewModel.selectedSort?.id == "home"
-                    ? viewModel.homeVideos
-                    : viewModel.categoryVideos
-                
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(videos) { video in
+                        ForEach(displayedVideos) { video in
                             NavigationLink(value: video) {
                                 VodCardView(video: video)
                             }
@@ -237,9 +239,8 @@ struct HomeView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
-                    
-                    // 加载更多
-                    if viewModel.selectedSort?.id != "home" && viewModel.hasMore {
+
+                    if viewModel.isLoadingMore {
                         ProgressView()
                             .padding()
                     }

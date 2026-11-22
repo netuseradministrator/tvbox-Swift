@@ -50,7 +50,7 @@ class NetworkManager {
         config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = 30
         config.httpMaximumConnectionsPerHost = 5
-        config.waitsForConnectivity = true
+        config.waitsForConnectivity = false
         self.session = URLSession(configuration: config)
     }
     

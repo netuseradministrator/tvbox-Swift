@@ -598,10 +598,9 @@ class ApiConfig: ObservableObject {
             
             // 设置默认主页源：优先选择 Swift 支持的源
             if let saved = UserDefaults.standard.string(forKey: HawkConfig.HOME_API),
-               let found = sources.first(where: { $0.key == saved }) {
+               let found = sources.first(where: { $0.key == saved && $0.isSupportedInSwift }) {
                 self.homeSourceBean = found
             } else {
-                // 优先选择支持的源（type 0/1/4），跳过 type=3 (JAR)
                 self.homeSourceBean = sources.first(where: { $0.isSupportedInSwift }) ?? sources.first
             }
             

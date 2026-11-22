@@ -19,7 +19,7 @@ struct SourceBean: Codable, Identifiable, Hashable {
     let quickSearch: Int
     /// 源声明的播放器类型（历史字段，Swift 端目前主要走统一播放器策略）。
     let playerType: Int
-    /// 源协议类型：0 XML，1 JSON，3 JAR，4 Remote。
+    /// 源协议类型：0 XML，1 JSON，3 JAR/脚本/兼容 JSON，4 Remote。
     let type: Int
     /// 扩展参数（remote 源常用）。
     let ext: String?
@@ -42,9 +42,13 @@ struct SourceBean: Codable, Identifiable, Hashable {
     var isFilterable: Bool { filterable == 1 }
     var isQuickSearchEnabled: Bool { quickSearch == 1 }
     
-    /// 是否在 Swift 版中受支持（type=3 为 JAR/Spider，需要 Java 运行时，暂不支持）
+    /// HTTP type=3 地址可尝试标准 CMS JSON 回退；csp/JAR 等运行时源仍不支持。
     var isSupportedInSwift: Bool {
-        return type == 0 || type == 1 || type == 4
+        return type == 0 || type == 1 || type == 4 || (type == 3 && isHttpApi)
+    }
+
+    var isExperimentalType3JSON: Bool {
+        type == 3 && isHttpApi
     }
     
     /// 类型描述
@@ -52,7 +56,7 @@ struct SourceBean: Codable, Identifiable, Hashable {
         switch type {
         case 0: return "XML"
         case 1: return "JSON"
-        case 3: return "JAR"
+        case 3: return isHttpApi ? "JSON/脚本" : "JAR"
         case 4: return "Remote"
         default: return "未知"
         }

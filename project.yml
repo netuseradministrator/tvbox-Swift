@@ -142,3 +142,12 @@ targets:
           SWIFT_OPTIMIZATION_LEVEL: "-Onone"
         Release:
           SWIFT_OPTIMIZATION_LEVEL: "-O"
+
+schemes:
+  tvbox:
+    build:
+      targets:
+        tvbox: all
+    test:
+      targets:
+        - tvbox-Tests

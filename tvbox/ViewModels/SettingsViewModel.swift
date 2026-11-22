@@ -245,6 +245,9 @@ class SettingsViewModel: ObservableObject {
         URLCache.shared.removeAllCachedResponses()
         ImageLoader.shared.clearCache()
         ImageCache.shared.clear()
+        Task {
+            await SourceContentCache.shared.removeAll()
+        }
         refreshCacheSize()
     }
     

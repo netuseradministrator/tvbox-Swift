@@ -6,19 +6,38 @@ class SourceService {
     static let shared = SourceService()
     
     private let network = NetworkManager.shared
+    private let contentCache = SourceContentCache.shared
     
     private init() {}
     
     // MARK: - 获取分类列表
+
+    func cachedSort(sourceBean: SourceBean) async -> CachedSourceValue<SourceHomeContent>? {
+        await contentCache.cachedHome(for: sourceBean)
+    }
     
-    /// 获取指定源的分类列表和首页推荐
-    func getSort(sourceBean: SourceBean) async throws -> (sorts: [MovieSort.SortData], homeVideos: [Movie.Video]) {
+    /// 获取指定源的分类列表和首页推荐。新鲜缓存直接返回，强制刷新时始终访问网络。
+    func getSort(
+        sourceBean: SourceBean,
+        forceRefresh: Bool = false
+    ) async throws -> (sorts: [MovieSort.SortData], homeVideos: [Movie.Video]) {
+        if !forceRefresh,
+           let cached = await contentCache.cachedHome(for: sourceBean),
+           cached.isFresh {
+            return (cached.value.sorts, cached.value.homeVideos)
+        }
+        let result = try await fetchSort(sourceBean: sourceBean)
+        let content = SourceHomeContent(sorts: result.sorts, homeVideos: result.homeVideos)
+        await contentCache.storeHome(content, for: sourceBean)
+        return result
+    }
+
+    private func fetchSort(sourceBean: SourceBean) async throws -> (sorts: [MovieSort.SortData], homeVideos: [Movie.Video]) {
         let api = sourceBean.api
         guard !api.isEmpty else {
             throw SourceError.emptyApi
         }
         
-        // type=3 (JAR/Spider) 暂不支持
         guard sourceBean.isSupportedInSwift else {
             throw SourceError.unsupportedType(sourceBean.typeDescription)
         }
@@ -47,7 +66,7 @@ class SourceService {
             let url = try buildURL(base: api, queryItems: queryItems)
             jsonStr = try await network.getString(from: url)
         } else {
-            // JSON 接口 (type=1)
+            // JSON 接口（type=1 及实验性 HTTP type=3）
             let url = try buildURL(
                 base: api,
                 queryItems: [URLQueryItem(name: "ac", value: "class")]
@@ -94,6 +113,9 @@ class SourceService {
             }
         }
         
+        if sourceBean.isExperimentalType3JSON && sorts.isEmpty && homeVideos.isEmpty {
+            throw SourceError.parseError("该 type=3 地址不是标准 CMS JSON；JAR、JS 和 Python 脚本源暂不支持")
+        }
         return (sorts, homeVideos)
     }
     
@@ -125,16 +147,9 @@ class SourceService {
                     }
                 }
                 
-                // 解析首页推荐视频
-                if let list = json["list"] as? [[String: Any]] {
-                    for item in list {
-                        let decoder = JSONDecoder()
-                        if let itemData = try? JSONSerialization.data(withJSONObject: item),
-                           var video = try? decoder.decode(Movie.Video.self, from: itemData) {
-                            video.sourceKey = sourceBean.key
-                            homeVideos.append(video)
-                        }
-                    }
+                // 整批解码，避免为每个条目重复创建解码器。
+                if let list = json["list"] {
+                    homeVideos = decodeVideos(from: list, sourceKey: sourceBean.key)
                 }
             }
         }
@@ -162,8 +177,54 @@ class SourceService {
     
     // MARK: - 获取分类视频列表
     
-    /// 获取分类下的视频列表
-    func getList(sourceBean: SourceBean, sortData: MovieSort.SortData, page: Int = 1, filters: [String: String]? = nil) async throws -> [Movie.Video] {
+    func cachedList(
+        sourceBean: SourceBean,
+        sortData: MovieSort.SortData,
+        page: Int = 1,
+        filters: [String: String]? = nil
+    ) async -> CachedSourceValue<[Movie.Video]>? {
+        await contentCache.cachedList(
+            for: sourceBean,
+            sortID: sortData.id,
+            page: page,
+            filters: filters
+        )
+    }
+
+    /// 获取分类下的视频列表。分页与筛选条件均参与缓存键，避免串用数据。
+    func getList(
+        sourceBean: SourceBean,
+        sortData: MovieSort.SortData,
+        page: Int = 1,
+        filters: [String: String]? = nil,
+        forceRefresh: Bool = false
+    ) async throws -> [Movie.Video] {
+        if !forceRefresh,
+           let cached = await contentCache.cachedList(
+            for: sourceBean,
+            sortID: sortData.id,
+            page: page,
+            filters: filters
+           ), cached.isFresh {
+            return cached.value
+        }
+        let videos = try await fetchList(
+            sourceBean: sourceBean,
+            sortData: sortData,
+            page: page,
+            filters: filters
+        )
+        await contentCache.storeList(
+            videos,
+            for: sourceBean,
+            sortID: sortData.id,
+            page: page,
+            filters: filters
+        )
+        return videos
+    }
+
+    private func fetchList(sourceBean: SourceBean, sortData: MovieSort.SortData, page: Int = 1, filters: [String: String]? = nil) async throws -> [Movie.Video] {
         let api = sourceBean.api
         guard !api.isEmpty else { throw SourceError.emptyApi }
         guard sourceBean.isSupportedInSwift else { throw SourceError.unsupportedType(sourceBean.typeDescription) }
@@ -242,18 +303,33 @@ class SourceService {
         } else {
             // JSON 格式 (type=1, type=4)
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let list = json["list"] as? [[String: Any]] {
-                let decoder = JSONDecoder()
-                for item in list {
-                    if let itemData = try? JSONSerialization.data(withJSONObject: item),
-                       var video = try? decoder.decode(Movie.Video.self, from: itemData) {
-                        video.sourceKey = sourceKey
-                        videos.append(video)
-                    }
-                }
+               let list = json["list"] {
+                videos = decodeVideos(from: list, sourceKey: sourceKey)
             }
         }
         
+        return videos
+    }
+
+    private func decodeVideos(from rawList: Any, sourceKey: String) -> [Movie.Video] {
+        guard let list = rawList as? [Any],
+              let listData = try? JSONSerialization.data(withJSONObject: list) else {
+            return []
+        }
+
+        let decoder = JSONDecoder()
+        var videos: [Movie.Video]
+        if let decoded = try? decoder.decode([Movie.Video].self, from: listData) {
+            videos = decoded
+        } else {
+            videos = list.compactMap { item in
+                guard let itemData = try? JSONSerialization.data(withJSONObject: item) else { return nil }
+                return try? decoder.decode(Movie.Video.self, from: itemData)
+            }
+        }
+        for index in videos.indices {
+            videos[index].sourceKey = sourceKey
+        }
         return videos
     }
     

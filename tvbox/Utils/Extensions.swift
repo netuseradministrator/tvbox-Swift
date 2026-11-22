@@ -295,7 +295,6 @@ typealias PlatformImage = UIImage
 // MARK: - Image Loader
 
 /// 使用自定义 URLSession 加载图片，支持自定义请求头
-@MainActor
 final class ImageLoader {
     static let shared = ImageLoader()
     
@@ -419,7 +418,6 @@ enum ImageLoadError: Error {
 // MARK: - Image Memory Cache
 
 /// 简单的内存缓存，避免重复下载
-@MainActor
 final class ImageCache {
     static let shared = ImageCache()
     
